@@ -1,0 +1,68 @@
+(this is the whole file for XA65, you heard me. I had to use XA65 BECAUSE NO ONE HAS A WORKING VERSION OF 64TASS OR ACME IN WINDOWS ON GITHUB!)
+
+P.S I HATE YOU ALL!
+
+* = $1000
+  .word nextline
+  .word 10
+  .byte $9E
+  .asc "4096",0
+nextline:
+  .word 0
+
+; ------------------------------------------------------------
+; RAINBOW BASIC LOADER (RAM-resident)
+; ------------------------------------------------------------
+
+RAINBOW_START:
+  jsr RB_INIT
+  rts
+
+; ------------------------------------------------------------
+; Initialization routine
+; ------------------------------------------------------------
+
+RB_INIT:
+  lda #'R'
+  jsr $FFD2
+  lda #'B'
+  jsr $FFD2
+  lda #'!'
+  jsr $FFD2
+  rts
+
+; ------------------------------------------------------------
+; (Your RAINBOW BASIC code continues here…)
+; ------------------------------------------------------------
+  * = $1000
+    .word nextline
+    .word 10
+    .byte $9E
+    .asc "4096",0
+  nextline:
+    .word 0
+
+; ------------------------------------------------------------
+; RAINBOW BASIC LOADER (RAM-resident)
+; ------------------------------------------------------------
+
+RAINBOW_START:
+  jsr RB_INIT:
+  rts
+
+; ------------------------------------------------------------
+; Initialization routine
+; ------------------------------------------------------------
+
+RB_INIT:
+  lda #'R'
+  jsr $FFD2
+  lda #'B'
+  jsr $FFD2
+  lda #'!'
+  jsr $FFD2
+  rts
+
+; ------------------------------------------------------------
+; (Your RAINBOW BASIC code continues here…)
+; ------------------------------------------------------------
