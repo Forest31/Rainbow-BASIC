@@ -24,3 +24,5 @@ See the LICENSE file for the full license text.
 
 it's meant to be easy enough for kids but just as good for those that want a real treat AND it hooks into the PET color graphics of winvice 3.9. I plan to add support for the HRE board in the near future (but not anytime soon, 2 days without rest is a killer)
 
+
+first release is done get the package while it's available. commands will be added if needed
