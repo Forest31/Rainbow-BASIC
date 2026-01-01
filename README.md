@@ -16,7 +16,9 @@ Sound commands (PLAY, SAW etc)
 
 still a WIP
 
-MIT license. don't break the law and don't rule 34 my code, I WILL PROSECUTE!
+This project is licensed under the Apache License 2.0.
+See the LICENSE file for details.
+
 
 it's meant to be easy enough for kids but just as good for those that want a real treat AND it hooks into the PET color graphics of winvice 3.9. I plan to add support for the HRE board in the near future (but not anytime soon, 2 days without rest is a killer)
-thank you Co-Pilot
+
