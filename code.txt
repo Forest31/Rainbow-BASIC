@@ -1,68 +1,1315 @@
-(this is the whole file for XA65, you heard me. I had to use XA65 BECAUSE NO ONE HAS A WORKING VERSION OF 64TASS OR ACME IN WINDOWS ON GITHUB!)
+before you download this file know that there are two versions, a version that is meant to be run exclusively on real hardware and does not have the basic expansion. there is also another version for the commodore 8296 which does have the expansion. the first version of which I am about to give you now runs on a real patch but for those of you that might feel left out, I have a special treat: if you invoke a sys command, this patch will run on models up to the 2001 original. making this took a lot of effort and I will not be so prude as to admit that I had to source a lot of the content from copilot. keep in mind I said content, not code. so here is the first listing: 
 
-P.S I HATE YOU ALL!
+; RAINBOW ORIGINAL v1.0
+; PET BASIC extension (no color)
+; Target: PET 4032/8032 by default, with early PET backdoor
+;
+; Load address: $0900
+;   Assemble to raw binary starting at $0900
+;   Prepend bytes:  $00 $09
+; Usage:
+;   SYS2304,1   ; 80x25 mode, screen at $8000 (4032/8032)
+;   SYS2304,0   ; 40x25 mode, screen at $0400 (early PET)
+;
+; After SYS:
+;   A$="GRID":X=USR(0)
+;   A$="CLS":X=USR(0)
+;   A$="MOVE AT 10 5 X":X=USR(0)
+;   A$="PRINT AT 2 10 HELLO":X=USR(0)
 
-* = $1000
-  .word nextline
-  .word 10
-  .byte $9E
-  .asc "4096",0
-nextline:
-  .word 0
+        .org $0900
 
-; ------------------------------------------------------------
-; RAINBOW BASIC LOADER (RAM-resident)
-; ------------------------------------------------------------
-
-RAINBOW_START:
-  jsr RB_INIT
-  rts
-
-; ------------------------------------------------------------
-; Initialization routine
-; ------------------------------------------------------------
-
-RB_INIT:
-  lda #'R'
-  jsr $FFD2
-  lda #'B'
-  jsr $FFD2
-  lda #'!'
-  jsr $FFD2
-  rts
+CHROUT  = $FFD2
+GETIN   = $FFE4
 
 ; ------------------------------------------------------------
-; (Your RAINBOW BASIC code continues here�)
-; ------------------------------------------------------------
-  * = $1000
-    .word nextline
-    .word 10
-    .byte $9E
-    .asc "4096",0
-  nextline:
-    .word 0
-
-; ------------------------------------------------------------
-; RAINBOW BASIC LOADER (RAM-resident)
+; ZP / variables
 ; ------------------------------------------------------------
 
-RAINBOW_START:
-  jsr RB_INIT:
-  rts
+MODE_FLAG       = $02    ; 0 = early (40x25, $0400), 1 = late (80x25, $8000)
+SCR_BASE_LO     = $03
+SCR_BASE_HI     = $04
+
+CUR_X           = $05
+CUR_Y           = $06
+
+STRPTR          = $07    ; 2 bytes
+CMD_BUF         = $20    ; 64 bytes
+NUM1            = $60
+NUM2            = $61
+NUM3            = $62
 
 ; ------------------------------------------------------------
-; Initialization routine
+; ENTRY: SYS2304,mode
+;   A/Y contain return address, X contains low byte of first arg
+;   BASIC puts first integer arg at FAC; we’ll read it via stack.
+;   To keep it simple, we read the mode from BASIC’s integer arg
+;   using the standard SYS-with-argument convention:
+;   SYS2304,0 or SYS2304,1
 ; ------------------------------------------------------------
 
-RB_INIT:
-  lda #'R'
-  jsr $FFD2
-  lda #'B'
-  jsr $FFD2
-  lda #'!'
-  jsr $FFD2
-  rts
+START:
+        jsr READ_MODE       ; sets MODE_FLAG and screen base
+        jsr INSTALL_USR
+        rts
 
 ; ------------------------------------------------------------
-; (Your RAINBOW BASIC code continues here�)
+; READ_MODE: read SYS argument (0 or 1), default 1 if none
 ; ------------------------------------------------------------
+
+READ_MODE:
+        lda #1              ; default: late mode (80x25, $8000)
+        sta MODE_FLAG
+
+        ; BASIC passes integer arg in FAC for SYS
+        ; We’ll peek at FAC integer at $61/$62 (low/high)
+        ; If zero, early mode; if nonzero, late mode.
+
+        lda $61             ; low byte of FAC integer
+        ora $62             ; high byte
+        beq RM_EARLY
+        lda #1
+        bne RM_SET
+
+RM_EARLY:
+        lda #0
+
+RM_SET:
+        sta MODE_FLAG
+
+        ; set screen base according to mode
+        lda MODE_FLAG
+        beq RM_SET_EARLY
+
+        ; late mode: 80x25, screen at $8000
+        lda #<$8000
+        sta SCR_BASE_LO
+        lda #>$8000
+        sta SCR_BASE_HI
+        rts
+
+RM_SET_EARLY:
+        ; early mode: 40x25, screen at $0400
+        lda #<$0400
+        sta SCR_BASE_LO
+        lda #>$0400
+        sta SCR_BASE_HI
+        rts
+
+; ------------------------------------------------------------
+; INSTALL_USR: patch USR vector at $020A/$020B
+; ------------------------------------------------------------
+
+INSTALL_USR:
+        sei
+        lda #<USR_ENTRY
+        sta $020A
+        lda #>USR_ENTRY
+        sta $020B
+        cli
+        rts
+
+; ------------------------------------------------------------
+; USR_ENTRY: BASIC USR() hook
+;   A$ must contain the command string
+; ------------------------------------------------------------
+
+USR_ENTRY:
+        ; get temporary string pointer (simplified)
+        lda $0073
+        sta STRPTR
+        lda $0074
+        sta STRPTR+1
+
+        ; copy up to 63 chars into CMD_BUF, uppercase
+        ldy #0
+UE_NEXT:
+        lda (STRPTR),y
+        beq UE_DONE
+        jsr TOUPPER
+        sta CMD_BUF,y
+        iny
+        cpy #63
+        bcc UE_NEXT
+UE_DONE:
+        lda #0
+        sta CMD_BUF,y
+
+        jsr DISPATCH_COMMAND
+
+        lda #0      ; USR() return value
+        rts
+
+; ------------------------------------------------------------
+; TOUPPER: A -> uppercase if a-z
+; ------------------------------------------------------------
+
+TOUPPER:
+        cmp #'a'
+        bmi TU_DONE
+        cmp #'z'+1
+        bpl TU_DONE
+        sec
+        sbc #$20
+TU_DONE:
+        rts
+
+; ------------------------------------------------------------
+; DISPATCH_COMMAND
+;   CMD_BUF contains full line, e.g. "GRID", "MOVE AT 10 5 X"
+; ------------------------------------------------------------
+
+DISPATCH_COMMAND:
+        ldx #0
+DC_SKIP:
+        lda CMD_BUF,x
+        beq DC_EXIT
+        cmp #' '
+        bne DC_WORD
+        inx
+        bne DC_SKIP
+
+DC_WORD:
+        ; check GRID
+        jsr MATCH_GRID
+        bcc DC_CHECK_CLS
+        jsr DO_GRID
+        rts
+
+DC_CHECK_CLS:
+        jsr MATCH_CLS
+        bcc DC_CHECK_MOVE_AT
+        jsr DO_CLS
+        rts
+
+DC_CHECK_MOVE_AT:
+        jsr MATCH_MOVE_AT
+        bcc DC_CHECK_MOVE_TO
+        jsr DO_MOVE_AT
+        rts
+
+DC_CHECK_MOVE_TO:
+        jsr MATCH_MOVE_TO
+        bcc DC_CHECK_MOVE_USING
+        jsr DO_MOVE_TO
+        rts
+
+DC_CHECK_MOVE_USING:
+        jsr MATCH_MOVE_USING
+        bcc DC_CHECK_PRINT_AT
+        jsr DO_MOVE_USING
+        rts
+
+DC_CHECK_PRINT_AT:
+        jsr MATCH_PRINT_AT
+        bcc DC_CHECK_CHAR
+        jsr DO_PRINT_AT
+        rts
+
+DC_CHECK_CHAR:
+        jsr MATCH_CHAR
+        bcc DC_CHECK_DUMP
+        jsr DO_CHAR
+        rts
+
+DC_CHECK_DUMP:
+        jsr MATCH_DUMP
+        bcc DC_EXIT
+        jsr DO_DUMP
+        rts
+
+DC_EXIT:
+        rts
+
+; ------------------------------------------------------------
+; MATCH HELPERS (carry=1 if match, X left after keyword)
+; ------------------------------------------------------------
+
+MATCH_GRID:
+        ldx #0
+        lda CMD_BUF,x
+        cmp #'G'
+        bne MG_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'R'
+        bne MG_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'I'
+        bne MG_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'D'
+        bne MG_FAIL
+        inx
+        sec
+        rts
+MG_FAIL:
+        clc
+        rts
+
+MATCH_CLS:
+        ldx #0
+        lda CMD_BUF,x
+        cmp #'C'
+        bne MC_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'L'
+        bne MC_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'S'
+        bne MC_FAIL
+        inx
+        sec
+        rts
+MC_FAIL:
+        clc
+        rts
+
+MATCH_MOVE_AT:
+        ldx #0
+        lda CMD_BUF,x
+        cmp #'M'
+        bne MMA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'O'
+        bne MMA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'V'
+        bne MMA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'E'
+        bne MMA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #' '
+        bne MMA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'A'
+        bne MMA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'T'
+        bne MMA_FAIL
+        inx
+        sec
+        rts
+MMA_FAIL:
+        clc
+        rts
+
+MATCH_MOVE_TO:
+        ldx #0
+        lda CMD_BUF,x
+        cmp #'M'
+        bne MMT_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'O'
+        bne MMT_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'V'
+        bne MMT_FAIL
+        in
+        lda CMD_BUF,x
+        cmp #'E'
+        bne MMT_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #' '
+        bne MMT_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'T'
+
+
+
+
+and here is the second listing:
+; RAINBOW SPECIAL v1.0
+; PET 8296 / 8296-D BASIC extension with color
+;  - 80x25 screen at $8000
+;  - color/attribute plane at $9000 (VICE-friendly)
+;  - analog + RGBI color hooks for WinVICE 3.9
+;
+; Load address: $0900
+;   Assemble to raw binary starting at $0900
+;   (no need to wrap as .prg here)
+;
+; Usage from BASIC:
+;   SYS2304
+;   A$="GRID":X=USR(0)
+;   A$="CLS":X=USR(0)
+;   A$="MOVE AT 10 5 X":X=USR(0)
+;   A$="COLOR 2":X=USR(0)
+;   A$="COLOR AT 10 5 3":X=USR(0)
+;   A$="RAINBOW":X=USR(0)
+
+        .org $0900
+
+CHROUT          = $FFD2
+GETIN           = $FFE4
+
+; --- VICE PET color hooks (you can adjust these if needed) ---
+; Analog RGB registers (example mapping)
+COLOR_R         = $FFF0
+COLOR_G         = $FFF1
+COLOR_B         = $FFF2
+
+; RGBI-style register (example)
+COLOR_RGBI      = $FFF4
+
+; --- Screen / attribute memory for 8296 ---
+SCR_BASE_LO     = $02
+SCR_BASE_HI     = $03
+
+ATTR_BASE_LO    = $04
+ATTR_BASE_HI    = $05
+
+CUR_X           = $06
+CUR_Y           = $07
+
+CUR_COLOR       = $08      ; current drawing color (0–15)
+
+STRPTR          = $09      ; 2 bytes
+CMD_BUF         = $20      ; 64 bytes
+
+NUM1            = $60
+NUM2            = $61
+
+; ------------------------------------------------------------
+; ENTRY: SYS2304
+; ------------------------------------------------------------
+
+START:
+        jsr INIT_8296
+        jsr INSTALL_USR
+        rts
+
+; ------------------------------------------------------------
+; INIT_8296: set screen + attribute bases, default color
+; ------------------------------------------------------------
+
+INIT_8296:
+        ; screen at $8000
+        lda #<$8000
+        sta SCR_BASE_LO
+        lda #>$8000
+        sta SCR_BASE_HI
+
+        ; attribute/color plane at $9000 (VICE-friendly)
+        lda #<$9000
+        sta ATTR_BASE_LO
+        lda #>$9000
+        sta ATTR_BASE_HI
+
+        ; default color: 1 (e.g. green)
+        lda #1
+        sta CUR_COLOR
+
+        rts
+
+; ------------------------------------------------------------
+; INSTALL_USR: patch USR vector at $020A/$020B
+; ------------------------------------------------------------
+
+INSTALL_USR:
+        sei
+        lda #<USR_ENTRY
+        sta $020A
+        lda #>USR_ENTRY
+        sta $020B
+        cli
+        rts
+
+; ------------------------------------------------------------
+; USR_ENTRY: BASIC USR() hook
+;   A$ must contain the command string
+; ------------------------------------------------------------
+
+USR_ENTRY:
+        lda $0073
+        sta STRPTR
+        lda $0074
+        sta STRPTR+1
+
+        ; copy up to 63 chars into CMD_BUF, uppercase
+        ldy #0
+UE_NEXT:
+        lda (STRPTR),y
+        beq UE_DONE
+        jsr TOUPPER
+        sta CMD_BUF,y
+        iny
+        cpy #63
+        bcc UE_NEXT
+UE_DONE:
+        lda #0
+        sta CMD_BUF,y
+
+        jsr DISPATCH_COMMAND
+
+        lda #0
+        rts
+
+; ------------------------------------------------------------
+; TOUPPER: A -> uppercase if a-z
+; ------------------------------------------------------------
+
+TOUPPER:
+        cmp #'a'
+        bmi TU_DONE
+        cmp #'z'+1
+        bpl TU_DONE
+        sec
+        sbc #$20
+TU_DONE:
+        rts
+
+; ------------------------------------------------------------
+; DISPATCH_COMMAND
+; ------------------------------------------------------------
+
+DISPATCH_COMMAND:
+        ldx #0
+DC_SKIP:
+        lda CMD_BUF,x
+        beq DC_EXIT
+        cmp #' '
+        bne DC_WORD
+        inx
+        bne DC_SKIP
+
+DC_WORD:
+        jsr MATCH_GRID
+        bcc DC_CHECK_CLS
+        jsr DO_GRID
+        rts
+
+DC_CHECK_CLS:
+        jsr MATCH_CLS
+        bcc DC_CHECK_MOVE_AT
+        jsr DO_CLS
+        rts
+
+DC_CHECK_MOVE_AT:
+        jsr MATCH_MOVE_AT
+        bcc DC_CHECK_MOVE_TO
+        jsr DO_MOVE_AT
+        rts
+
+DC_CHECK_MOVE_TO:
+        jsr MATCH_MOVE_TO
+        bcc DC_CHECK_MOVE_USING
+        jsr DO_MOVE_TO
+        rts
+
+DC_CHECK_MOVE_USING:
+        jsr MATCH_MOVE_USING
+        bcc DC_CHECK_PRINT_AT
+        jsr DO_MOVE_USING
+        rts
+
+DC_CHECK_PRINT_AT:
+        jsr MATCH_PRINT_AT
+        bcc DC_CHECK_CHAR
+        jsr DO_PRINT_AT
+        rts
+
+DC_CHECK_CHAR:
+        jsr MATCH_CHAR
+        bcc DC_CHECK_COLOR
+        jsr DO_CHAR
+        rts
+
+DC_CHECK_COLOR:
+        jsr MATCH_COLOR
+        bcc DC_CHECK_COLOR_AT
+        jsr DO_COLOR
+        rts
+
+DC_CHECK_COLOR_AT:
+        jsr MATCH_COLOR_AT
+        bcc DC_CHECK_RAINBOW
+        jsr DO_COLOR_AT
+        rts
+
+DC_CHECK_RAINBOW:
+        jsr MATCH_RAINBOW
+        bcc DC_EXIT
+        jsr DO_RAINBOW
+        rts
+
+DC_EXIT:
+        rts
+
+; ------------------------------------------------------------
+; MATCH HELPERS
+; ------------------------------------------------------------
+
+MATCH_GRID:
+        ldx #0
+        lda CMD_BUF,x
+        cmp #'G'
+        bne MG_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'R'
+        bne MG_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'I'
+        bne MG_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'D'
+        bne MG_FAIL
+        inx
+        sec
+        rts
+MG_FAIL:
+        clc
+        rts
+
+MATCH_CLS:
+        ldx #0
+        lda CMD_BUF,x
+        cmp #'C'
+        bne MC_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'L'
+        bne MC_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'S'
+        bne MC_FAIL
+        inx
+        sec
+        rts
+MC_FAIL:
+        clc
+        rts
+
+MATCH_MOVE_AT:
+        ldx #0
+        lda CMD_BUF,x
+        cmp #'M'
+        bne MMA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'O'
+        bne MMA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'V'
+        bne MMA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'E'
+        bne MMA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #' '
+        bne MMA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'A'
+        bne MMA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'T'
+        bne MMA_FAIL
+        inx
+        sec
+        rts
+MMA_FAIL:
+        clc
+        rts
+
+MATCH_MOVE_TO:
+        ldx #0
+        lda CMD_BUF,x
+        cmp #'M'
+        bne MMT_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'O'
+        bne MMT_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'V'
+        bne MMT_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'E'
+        bne MMT_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #' '
+        bne MMT_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'T'
+        bne MMT_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'O'
+        bne MMT_FAIL
+        inx
+        sec
+        rts
+MMT_FAIL:
+        clc
+        rts
+
+MATCH_MOVE_USING:
+        ldx #0
+        lda CMD_BUF,x
+        cmp #'M'
+        bne MMU_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'O'
+        bne MMU_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'V'
+        bne MMU_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'E'
+        bne MMU_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #' '
+        bne MMU_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'U'
+        bne MMU_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'S'
+        bne MMU_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'I'
+        bne MMU_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'N'
+        bne MMU_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'G'
+        bne MMU_FAIL
+        inx
+        sec
+        rts
+MMU_FAIL:
+        clc
+        rts
+
+MATCH_PRINT_AT:
+        ldx #0
+        lda CMD_BUF,x
+        cmp #'P'
+        bne MPA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'R'
+        bne MPA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'I'
+        bne MPA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'N'
+        bne MPA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'T'
+        bne MPA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #' '
+        bne MPA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'A'
+        bne MPA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'T'
+        bne MPA_FAIL
+        inx
+        sec
+        rts
+MPA_FAIL:
+        clc
+        rts
+
+MATCH_CHAR:
+        ldx #0
+        lda CMD_BUF,x
+        cmp #'C'
+        bne MCH_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'H'
+        bne MCH_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'A'
+        bne MCH_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'R'
+        bne MCH_FAIL
+        inx
+        sec
+        rts
+MCH_FAIL:
+        clc
+        rts
+
+MATCH_COLOR:
+        ldx #0
+        lda CMD_BUF,x
+        cmp #'C'
+        bne MCO_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'O'
+        bne MCO_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'L'
+        bne MCO_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'O'
+        bne MCO_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'R'
+        bne MCO_FAIL
+        inx
+        sec
+        rts
+MCO_FAIL:
+        clc
+        rts
+
+MATCH_COLOR_AT:
+        ldx #0
+        lda CMD_BUF,x
+        cmp #'C'
+        bne MCA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'O'
+        bne MCA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'L'
+        bne MCA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'O'
+        bne MCA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'R'
+        bne MCA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #' '
+        bne MCA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'A'
+        bne MCA_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'T'
+        bne MCA_FAIL
+        inx
+        sec
+        rts
+MCA_FAIL:
+        clc
+        rts
+
+MATCH_RAINBOW:
+        ldx #0
+        lda CMD_BUF,x
+        cmp #'R'
+        bne MRB_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'A'
+        bne MRB_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'I'
+        bne MRB_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'N'
+        bne MRB_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'B'
+        bne MRB_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'O'
+        bne MRB_FAIL
+        inx
+        lda CMD_BUF,x
+        cmp #'W'
+        bne MRB_FAIL
+        inx
+        sec
+        rts
+MRB_FAIL:
+        clc
+        rts
+
+; ------------------------------------------------------------
+; SIMPLE NUMBER PARSER: single-digit 0–9 from CMD_BUF at X
+;   result in A
+; ------------------------------------------------------------
+
+PARSE_DIGIT:
+        lda CMD_BUF,x
+        sec
+        sbc #'0'
+        rts
+
+; ------------------------------------------------------------
+; SCREEN ADDRESS: (X,Y) -> SCR_BASE + offset
+;   X in X, Y in Y, result in SCR_BASE_LO/HI
+;   80-column fixed
+; ------------------------------------------------------------
+
+POS_TO_SCR:
+        ; offset = Y*80 + X
+        tya
+        sta NUM1
+        lda #0
+        sta NUM2
+
+        ; NUM2 = Y*64
+        lda NUM1
+        asl a
+        asl a
+        asl a
+        asl a
+        asl a
+        asl a
+        sta NUM2
+
+        ; NUM2 += Y*16
+        lda NUM1
+        asl a
+        asl a
+        asl a
+        asl a
+        clc
+        adc NUM2
+        sta NUM2
+
+        ; NUM2 += X
+        txa
+        clc
+        adc NUM2
+        sta NUM2
+
+        lda #<$8000
+        clc
+        adc NUM2
+        sta SCR_BASE_LO
+        lda #>$8000
+        adc #0
+        sta SCR_BASE_HI
+        rts
+
+; same for attribute plane
+POS_TO_ATTR:
+        jsr POS_TO_SCR
+        lda SCR_BASE_LO
+        clc
+        adc #<$1000
+        sta ATTR_BASE_LO
+        lda SCR_BASE_HI
+        adc #>$1000
+        sta ATTR_BASE_HI
+        rts
+
+; ------------------------------------------------------------
+; COMMAND IMPLEMENTATIONS
+; ------------------------------------------------------------
+
+DO_CLS:
+        lda #147
+        jsr CHROUT
+        rts
+
+DO_GRID:
+        ; simple frame: top and bottom lines
+        ldy #0
+        ldx #0
+DG_TOP:
+        cpx #80
+        beq DG_BOTTOM
+        lda #'-'
+        jsr WRITE_CHAR_COLOR
+        inx
+        bne DG_TOP
+
+DG_BOTTOM:
+        ldy #24
+        ldx #0
+DG_BOT_LOOP:
+        cpx #80
+        beq DG_DONE
+        lda #'-'
+        jsr WRITE_CHAR_COLOR
+        inx
+        bne DG_BOT_LOOP
+
+DG_DONE:
+        rts
+
+DO_MOVE_AT:
+        ; "MOVE AT x y c" (single-digit x,y)
+        ldx #7
+DMA_SKIP:
+        lda CMD_BUF,x
+        beq DMA_DONE
+        cmp #' '
+        bne DMA_X
+        inx
+        bne DMA_SKIP
+
+DMA_X:
+        jsr PARSE_DIGIT
+        sta CUR_X
+        inx
+        lda CMD_BUF,x
+        cmp #' '
+        bne DMA_Y
+        inx
+DMA_Y:
+        jsr PARSE_DIGIT
+        sta CUR_Y
+        inx
+        lda CMD_BUF,x
+        cmp #' '
+        bne DMA_CH
+        inx
+DMA_CH:
+        lda CMD_BUF,x
+        beq DMA_DONE
+        tax             ; char in X
+        ldx CUR_X
+        ldy CUR_Y
+        txa
+        jsr WRITE_CHAR_COLOR
+DMA_DONE:
+        rts
+
+DO_MOVE_TO:
+        ; "MOVE TO x y"
+        ldx #7
+DMT_SKIP:
+        lda CMD_BUF,x
+        beq DMT_DONE
+        cmp #' '
+        bne DMT_X
+        inx
+        bne DMT_SKIP
+
+DMT_X:
+        jsr PARSE_DIGIT
+        sta CUR_X
+        inx
+        lda CMD_BUF,x
+        cmp #' '
+        bne DMT_Y
+        inx
+DMT_Y:
+        jsr PARSE_DIGIT
+        sta CUR_Y
+DMT_DONE:
+        rts
+
+DO_MOVE_USING:
+        ; "MOVE USING dx dy" (single-digit positive)
+        ldx #11
+DMU_SKIP:
+        lda CMD_BUF,x
+        beq DMU_DONE
+        cmp #' '
+        bne DMU_DX
+        inx
+        bne DMU_SKIP
+
+DMU_DX:
+        jsr PARSE_DIGIT
+        clc
+        adc CUR_X
+        sta CUR_X
+        inx
+        lda CMD_BUF,x
+        cmp #' '
+        bne DMU_DY
+        inx
+DMU_DY:
+        jsr PARSE_DIGIT
+        clc
+        adc CUR_Y
+        sta CUR_Y
+DMU_DONE:
+        rts
+
+DO_PRINT_AT:
+        ; "PRINT AT x y text"
+        ldx #9
+DPA_SKIP:
+        lda CMD_BUF,x
+        beq DPA_DONE
+        cmp #' '
+        bne DPA_X
+        inx
+        bne DPA_SKIP
+
+DPA_X:
+        jsr PARSE_DIGIT
+        sta CUR_X
+        inx
+        lda CMD_BUF,x
+        cmp #' '
+        bne DPA_Y
+        inx
+DPA_Y:
+        jsr PARSE_DIGIT
+        sta CUR_Y
+        inx
+        lda CMD_BUF,x
+        cmp #' '
+        bne DPA_TEXT
+        inx
+DPA_TEXT:
+        ; text from CMD_BUF[x..]
+        ldy CUR_Y
+        ldx CUR_X
+DPA_LOOP:
+        lda CMD_BUF,x
+        beq DPA_DONE
+        pha
+        lda CUR_X
+        tax
+        lda CUR_Y
+        tay
+        pla
+        jsr WRITE_CHAR_COLOR
+        inc CUR_X
+        inx
+        bne DPA_LOOP
+DPA_DONE:
+        rts
+
+DO_CHAR:
+        ; "CHAR x y code" (single-digit x,y,code)
+        ldx #5
+DCH_SKIP:
+        lda CMD_BUF,x
+        beq DCH_DONE
+        cmp #' '
+        bne DCH_X
+        inx
+        bne DCH_SKIP
+
+DCH_X:
+        jsr PARSE_DIGIT
+        sta CUR_X
+        inx
+        lda CMD_BUF,x
+        cmp #' '
+        bne DCH_Y
+        inx
+DCH_Y:
+        jsr PARSE_DIGIT
+        sta CUR_Y
+        inx
+        jsr PARSE_DIGIT
+        tax
+        ldx CUR_X
+        ldy CUR_Y
+        txa
+        jsr WRITE_CHAR_COLOR
+DCH_DONE:
+        rts
+
+DO_COLOR:
+        ; "COLOR n" (single-digit 0–9)
+        ldx #5
+DCO_SKIP:
+        lda CMD_BUF,x
+        beq DCO_DONE
+        cmp #' '
+        bne DCO_N
+        inx
+        bne DCO_SKIP
+
+DCO_N:
+        jsr PARSE_DIGIT
+        and #$0F
+        sta CUR_COLOR
+
+        ; also update RGBI register (simple mapping)
+        lda CUR_COLOR
+        sta COLOR_RGBI
+
+        ; crude analog mapping: R,G,B bits from color
+        lda CUR_COLOR
+        and #$01
+        beq DCO_R0
+        lda #$FF
+        bne DCO_RSET
+DCO_R0:
+        lda #$00
+DCO_RSET:
+        sta COLOR_R
+
+        lda CUR_COLOR
+        and #$02
+        beq DCO_G0
+        lda #$FF
+        bne DCO_GSET
+DCO_G0:
+        lda #$00
+DCO_GSET:
+        sta COLOR_G
+
+        lda CUR_COLOR
+        and #$04
+        beq DCO_B0
+        lda #$FF
+        bne DCO_BSET
+DCO_B0:
+        lda #$00
+DCO_BSET:
+        sta COLOR_B
+
+DCO_DONE:
+        rts
+
+DO_COLOR_AT:
+        ; "COLOR AT x y n"
+        ldx #9
+DCA_SKIP:
+        lda CMD_BUF,x
+        beq DCA_DONE
+        cmp #' '
+        bne DCA_X
+        inx
+        bne DCA_SKIP
+
+DCA_X:
+        jsr PARSE_DIGIT
+        sta CUR_X
+        inx
+        lda CMD_BUF,x
+        cmp #' '
+        bne DCA_Y
+        inx
+DCA_Y:
+        jsr PARSE_DIGIT
+        sta CUR_Y
+        inx
+        lda CMD_BUF,x
+        cmp #' '
+        bne DCA_N
+        inx
+DCA_N:
+        jsr PARSE_DIGIT
+        and #$0F
+        tax             ; color in X
+
+        ; write color at (CUR_X,CUR_Y)
+        ldx CUR_X
+        ldy CUR_Y
+        txa
+        jsr WRITE_COLOR_ONLY
+DCA_DONE:
+        rts
+
+DO_RAINBOW:
+        ; simple demo: set analog RGB to cycling values
+        lda #$80
+        sta COLOR_R
+        lda #$40
+        sta COLOR_G
+        lda #$20
+        sta COLOR_B
+        lda #$0F
+        sta COLOR_RGBI
+        rts
+
+; ------------------------------------------------------------
+; WRITE_CHAR_COLOR: write A at (X,Y) to screen + color plane
+;   X = X coord, Y = Y coord, A = char
+; ------------------------------------------------------------
+
+WRITE_CHAR_COLOR:
+        pha
+        stx CUR_X
+        sty CUR_Y
+        ldx CUR_X
+        ldy CUR_Y
+        jsr POS_TO_SCR
+        pla
+        ldy #0
+        sta (SCR_BASE_LO),y
+
+        ; write color
+        lda CUR_COLOR
+        jsr POS_TO_ATTR
+        ldy #0
+        sta (ATTR_BASE_LO),y
+        rts
+
+WRITE_COLOR_ONLY:
+        ; A = color, X/Y = coords already in CUR_X/CUR_Y
+        pha
+        stx CUR_X
+        sty CUR_Y
+        ldx CUR_X
+        ldy CUR_Y
+        jsr POS_TO_ATTR
+        pla
+        ldy #0
+        sta (ATTR_BASE_LO),y
+        rts
+
+; ------------------------------------------------------------
+; DATA
+; ------------------------------------------------------------
+
+; (no extra strings needed yet)
+now you're probably wondering why I did all this. you see back in 1977, Jack decided to play the ultimate trick on would be commodore owners. he negotiated a deal as you all know for $3 per pet sold but the cheap bastard refused to upgrade anything. so this is my New Year's gift to all of you long-suffering pet owners out there that have yearned for a quality basic upgrade that genuinely improves the system. I hope you enjoy.
+
