@@ -2,7 +2,7 @@
 Fixing what Jack refused to
 
 
-License: MIT
+License: Apache 2.0
 
 Rainbow BASIC seeks to fix what the commodore PET originally lacked. It adds dedicated graphics and sound commands, joystick routines and SID playback. The commands are simplified and there is a built in grid at 80x25 for easy graphics manipulation. No more Peek or Poke. This BASIC is a mix of Logo, INglish (the parser from the Hobbit) and BASIC code. So if you want to move the joystick you would write:
 
