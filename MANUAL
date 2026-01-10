@@ -1,0 +1,203 @@
+MANUAL for Rainbow basic V0.1
+
+🌈 RAINBOW BASIC — COMMAND REFERENCE (v0.1)
+A modern extension language for the Commodore PET / 8296
+
+Rainbow BASIC expands the PET’s classic BASIC with new verbs for graphics, sound, entity memory, and grid‑based movement. Commands are entered at the RAINBOW> prompt.
+
+This manual describes each command, its syntax, and its intended behavior.
+(Some commands are stubs in the current build and will evolve in later versions.)
+
+🎨 GRAPHICS COMMANDS
+GRAPHICS
+Enters Rainbow BASIC’s graphics mode.
+
+Syntax:
+
+Code
+GRAPHICS
+Description:  
+Switches the PET into Rainbow BASIC’s custom graphics environment.
+In the current stub, this prints a confirmation message.
+In future versions, this will activate:
+
+HRE (High‑Resolution Emulation)
+
+Grid overlays
+
+Drawing primitives
+
+Screen buffers
+
+DRAW CIRCLE LINE
+Draws a diagonal “circle line” demonstration.
+
+Syntax:
+
+Code
+DRAW CIRCLE LINE
+Description:  
+A placeholder drawing routine that plots a diagonal line using PETSCII block characters.
+Used to verify graphics memory access and screen addressing.
+
+🧭 MOVEMENT COMMANDS
+MOVE AT X,Y
+Moves an entity or cursor to an absolute grid coordinate.
+
+Syntax:
+
+Code
+MOVE AT X,Y
+Description:  
+Interprets X and Y as absolute positions on the 80×25 grid.
+Future versions will map this to entity positioning, cursor control, or sprite‑like objects.
+
+MOVE TO X,Y
+Moves toward a target coordinate.
+
+Syntax:
+
+Code
+MOVE TO X,Y
+Description:  
+Represents a “pathing” or “targeting” move.
+In future builds, this will support:
+
+stepwise movement
+
+collision checks
+
+AI navigation
+
+tweening
+
+🎵 SOUND COMMANDS
+PLAY SAW WAVE ENVELOPE
+Plays a rising sawtooth‑style tone sweep.
+
+Syntax:
+
+Code
+PLAY SAW WAVE ENVELOPE
+Description:  
+Demonstrates envelope‑style sound generation.
+In the stub, this uses PET’s SOUND command to sweep frequencies.
+In future versions, this will route to:
+
+SID emulation
+
+ADSR envelopes
+
+Waveform selection
+
+Multi‑voice playback
+
+SID
+Controls SID‑style sound parameters.
+
+Syntax:
+
+Code
+SID <parameters>
+Examples:
+
+Code
+SID WAVE SAW
+SID FREQ 440
+SID VOICE 2
+Description:  
+A general‑purpose SID control verb.
+Currently a stub that echoes the command.
+Future versions will write directly to SID registers or a SID‑compatible driver.
+
+🗺️ GRID COMMANDS
+GRID
+Displays the 80×25 grid index map.
+
+Syntax:
+
+Code
+GRID
+Description:  
+Prints a coarse grid map where each cell is represented by a number.
+Useful for:
+
+coordinate debugging
+
+MOVE AT / MOVE TO testing
+
+entity placement
+
+screen layout planning
+
+🧩 ENTITY MEMORY COMMANDS
+These commands extend BASIC’s PEEK/POKE into structured “entity memory,”
+allowing Rainbow BASIC to behave more like a MUD engine or game runtime.
+
+PEEK_ENT X
+Reads a value from entity memory.
+
+Syntax:
+
+Code
+PEEK_ENT X
+Description:  
+Reads a byte from memory address X and prints the result.
+Future versions will map this to:
+
+entity tables
+
+AI state
+
+inventory slots
+
+world data
+
+POKE_ENT X,Y
+Writes a value to entity memory.
+
+Syntax:
+
+Code
+POKE_ENT X,Y
+Description:  
+Writes value Y to memory address X.
+Future versions will enforce entity boundaries and structured memory layouts.
+
+📦 DATA MANAGEMENT COMMANDS
+DAT_ENT
+Automatically scans and processes all DATA statements in the program.
+
+Syntax:
+
+Code
+DAT_ENT
+Description:  
+Searches the entire BASIC program for lines containing DATA.
+Intended for:
+
+auto‑loading entity definitions
+
+map data
+
+scripted events
+
+animation frames
+
+Future versions will parse and store DATA into entity memory automatically.
+
+🏁 SUMMARY
+Rainbow BASIC introduces a new command vocabulary for PET development:
+
+Category	Commands
+Graphics	GRAPHICS, DRAW CIRCLE LINE
+Movement	MOVE AT, MOVE TO
+Sound	PLAY SAW WAVE ENVELOPE, SID
+Grid	GRID
+Entity Memory	PEEK_ENT, POKE_ENT
+Data Automation	DAT_ENT
+This manual describes the behavior of the current stub interpreter.
+As the system evolves, each command will gain deeper functionality,
+eventually forming a full PET‑era creative environment.
+
+Have Fun
