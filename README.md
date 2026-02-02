@@ -1,28 +1,65 @@
 # Rainbow-BASIC
 Fixing what Jack refused to
 
+Rainbow BASIC is a playful, PET‑friendly dialect designed for young learners, creative coders, and retro‑computing explorers. This document defines the official V1 command set.
 
-License: Apache 2.0
 
-Rainbow BASIC seeks to fix what the commodore PET originally lacked. It adds dedicated graphics and sound commands, joystick routines and SID playback. The commands are simplified and there is a built in grid at 80x25 for easy graphics manipulation. No more Peek or Poke. This BASIC is a mix of Logo, INglish (the parser from the Hobbit) and BASIC code. So if you want to move the joystick you would write:
+Core Language Commands
+RUN — execute the current program
 
-MOVE THE JOYSTICK TO (grid coordinate)
+END — stop program execution
 
-or to draw a circle:
+GOTO <line> — jump to a specific line
 
-DRAW CIRCLE AT (grid)
+IF <expr> THEN <line> — conditional branch
 
-Sound commands (PLAY, SAW etc)
+LIST — display the program listing
 
-still a WIP
+CLS — clear the screen
 
+Variables & I/O
+LET <var> = <value> — assign a numeric or string value
+
+INPUT <var> — read user input
+
+PRINT <text or expr> — display text or evaluated expressions
+
+Graphics & Color
+COLOR <fg>, <bg> — set foreground/background colors
+
+RAINBOW — activate smooth color‑cycling
+
+CHAR <code> — print a PETSCII character by numeric code
+
+Sprite & Motion Commands
+SPRITE <id>, <x>, <y> — create or move a sprite
+
+MOTION <id>, <dx>, <dy> — apply velocity to a sprite
+
+STOP <id> — stop sprite movement
+
+HIDE <id> — make a sprite invisible
+
+SHOW <id> — make a sprite visible
+
+Age‑Based Behavior Modes
+Ages 5–7: simplified coordinates, automatic bounds checking, no negative velocities
+
+Ages 8–10: full coordinate grid, simple velocity
+
+Ages 11+: full sprite control, negative velocity, wrap‑around
+
+Help System
+HELP — list all commands
+
+HELP <command> — show detailed help for a specific command
+
+License: 
 This project is licensed under the Apache License 2.0.
 See the LICENSE file for details.
 See the LICENSE file for the full license text.
 
+additional: the development is taking longer than expected but rest assured it will be out whenever possible. as of now there will be only one version as a public release. it is not out at this time, please be patient
 
 
-it's meant to be easy enough for kids but just as good for those that want a real treat AND it hooks into the PET color graphics of winvice 3.9. I plan to add support for the HRE board in the near future (but not anytime soon, 2 days without rest is a killer)
-
-
-first release is done get the package while it's available. commands will be added if needed
+ due to the fact that this is my first big project, and as I am not as skilled in multiple OS versions, the best I will be able to give you for cross building is a text file of the code. I apologize for that
